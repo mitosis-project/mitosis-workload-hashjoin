@@ -21,9 +21,45 @@ Ashish Panwar
 Dependencies
 ------------
 
+```
+sudo apt install libnuma-dev
+```
+
 Building
 --------
 
+Just type
+
+```
+make
+```
+
+to build all.
 
 Running
 -------
+
+Running the benchmark (single threaded)
+
+```
+./bin/bench_hashjoin_st
+```
+
+Running the benchmark (multi threaded)
+
+```
+./bin/bench_hashjoin_mt
+```
+
+Config Parameters
+```
+ -o FILE --
+```
+
+Run parameters:
+```
+ -s <hashtablesize>
+ -n <numiterations>
+ -o <outertablesize>
+ -i <innertablesize>
+```
