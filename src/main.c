@@ -38,89 +38,21 @@
 #include <unistd.h>    /* exit */
 #include <sys/ioctl.h> /* ioctl */
 #include <sys/mman.h>
+#include <sys/time.h>
 #include <numa.h>
 #include <time.h>
 #include <pthread.h>
 #include <signal.h>
 
-
 #ifdef _OPENMP
 #    include <omp.h>
 #endif
 
-#if (defined(GREEN_MARL) || defined(GUPS))
-#    define DISABLE_SIGNAL_IN_MAIN
-#endif
+#include "config.h"
 
-/* configuration options */
-
-// use mfd instead of shm for creating the memory file
-//#define CONFIG_USE_MFD 1
-
-#define CONFIG_HAVE_MODIFIED_KERNEL 1
-
-///< the name of the shared memory file created
-#define CONFIG_SHM_FILE_NAME "/tmp/alloctest-bench"
-
-///< virtual base address of the table to be mapped. Currently PML4[128 + x]
-#define CONFIG_TABLE_MAP_BASE(x) (uintptr_t)((128UL + (x)) * (512UL << 30))
-
-#define CONFIG_STATUS_PRINT stderr
-
-#define CONFIG_MAX_ADDRESS_BITS 48
-
-#define CONFIG_MMAP_FLAGS MAP_SHARED | MAP_FIXED | MAP_NORESERVE
-
-#define CONFIG_MMAP_PROT PROT_READ | PROT_WRITE
-
-#define CHECK_NODE(_n, _s)                                                                        \
-    do {                                                                                          \
-        if (_n < 0 || _n >= numa_num_configured_nodes()) {                                        \
-            fprintf(stderr,                                                                       \
-                    "WARNING: provided numa node for " _s " was "                                 \
-                    " %d out of supported range! setting to 0.\n",                                \
-                    _n);                                                                          \
-            _n = 0;                                                                               \
-        }                                                                                         \
-    } while (0);
-
-#ifndef MAP_HUGE_2MB
-#    define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
-#endif
-
-
-FILE *opt_file_out = NULL;  ///< standard output
-static bool opt_interference = false;
-
-#ifdef CONFIG_USE_MFD
-#    include <linux/memfd.h>
-#    include <asm/unistd_64.h>
-
-static inline int memfd_create(const char *name, unsigned int flags)
-{
-    return syscall(__NR_memfd_create, name, flags);
-}
-#endif
-
-
-/*
- * ============================================================================
- * PT Dump
- * ============================================================================
- */
-
-static bool opt_dump_pt_crc = false;
-static bool opt_dump_pt_full = false;
-static void *opt_dump_buf = NULL;
-
-int opt_numa_node_pte = 0;
-int opt_madvise_advice = MADV_NOHUGEPAGE;
-struct bitmask *opt_runmask = NULL;
-struct bitmask *opt_allocmask = NULL;
-struct bitmask *opt_ptemask = NULL;
+FILE *opt_file_out = NULL;  ///< standard outpu
 
 extern int real_main(int argc, char *argv[]);
-
 
 void signalhandler(int sig)
 {
@@ -140,7 +72,6 @@ void signalhandler(int sig)
     exit(0);
 }
 
-#include <sys/time.h>
 
 int main(int argc, char *argv[])
 {
@@ -152,16 +83,20 @@ int main(int argc, char *argv[])
     }
     printf("\n");
 
-    opt_file_out = stdout;
+    /* check if NUMA is available, otherwise we don't know how to allocate memory */
+    if (numa_available() == -1) {
+        fprintf(stderr, "ERROR: Numa not available on this machine.\n");
+        return -1;
+    }
 
+    opt_file_out = stdout;
     int c;
     while ((c = getopt(argc, argv, "o:h")) != -1) {
         switch (c) {
         case '-':
             break;
         case 'h':
-            printf("usage: %s [-p N] [-d N] [-r N] [-m N] [-o FILE]\n", argv[0]);
-            printf("p: pagetable node, d: datanode, r: runnode, m: memory in GB\n");
+            printf("usage: %s [-o FILE]\n", argv[0]);
             return 0;
         case 'o':
             opt_file_out = fopen(optarg, "a");
@@ -210,6 +145,10 @@ int main(int argc, char *argv[])
 #endif
     fprintf(opt_file_out, "</config>\n");
 
+    /* setting the bind policy */
+    numa_set_strict(1);
+    numa_set_bind_policy(1);
+
     struct sigaction sigact;
     sigset_t block_set;
 
@@ -225,22 +164,10 @@ int main(int argc, char *argv[])
     real_main(prog_argc, prog_argv);
     fprintf(opt_file_out, "</run>\n");
 
-    FILE *fd3 = fopen(CONFIG_SHM_FILE_NAME ".done", "w");
-
-    if (fd3 == NULL) {
-        fprintf(stderr, "ERROR: could not create the shared memory file descriptor\n");
-        exit(-1);
-    }
-
-    usleep(250);
-
     gettimeofday(&tend, NULL);
-    printf("Took: %zu.%03zu\n", tend.tv_sec - tstart.tv_sec,
+    printf("Total time: %zu.%03zu\n", tend.tv_sec - tstart.tv_sec,
            (tend.tv_usec - tstart.tv_usec) / 1000);
-    fprintf(opt_file_out, "Took: %zu.%03zu\n", tend.tv_sec - tstart.tv_sec,
-            (tend.tv_usec - tstart.tv_usec) / 1000);
 
     fprintf(opt_file_out, "</benchmark>\n");
-    fflush(opt_file_out);
     return 0;
 }

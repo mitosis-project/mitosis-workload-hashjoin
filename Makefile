@@ -18,8 +18,8 @@ CXXFLAGS=-O3 -march=native
 COMMON_LIBS=-lrt -ldl -lnuma -lpthread -lm
 
 # common main functions for multithreaded, single threaded and page-table dump
-SRC_M=src/main-mt.c src/hashjoin.c src/murmurhash.c
-SRC_S=src/main-st.c src/hashjoin.c src/murmurhash.c
+SRC_M=src/main.c src/hashjoin.c src/murmurhash.c
+SRC_S=src/main.c src/hashjoin.c src/murmurhash.c
 DEPS=src/config.h src/murmur3.h
 
 # the targets
